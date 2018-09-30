@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+# (c) 2018, Gregory Adolphson <@adolphsons>
+
 ANSIBLE_METADATA = {'metadata_version': '1.0',
                     'supported_by': 'community',
                     'status': ['preview']}
