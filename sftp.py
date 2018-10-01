@@ -195,60 +195,86 @@ def load_config_file():
             return p, path
     return None, ''
 
+def _get_user():
+    user = None
+    try:
+        user = (os.environ['REMOTE_USER'])
+        return(user)
+    except:
+         pass
+    try:
+        user = (ConfigMap("defaults")['remote_user'])
+        return(user)
+    except:
+         pass
+    user = os.getlogin()
+    return(user)
+
+def _KeySearch():
+    ssh_private_key = None
+    _home = (os.environ['HOME'])
+    try:
+        ssh_private_key = (ConfigMap("defaults")['private_key_file'])
+        ssh_private_key = os.path.expanduser(ssh_private_key)
+        return(ssh_private_key)
+    except:
+         pass
+    try:
+        if os.path.isfile("{}/.ssh/id_rsa".format(_home)):
+          ssh_private_key = "{}/.ssh/id_rsa".format(_home)
+          return(ssh_private_key)
+    except:
+        pass
+    try:
+        if (os.path.isfile("{}/.ssh/id_dsa".format(_home))):
+            ssh_private_key = "{}/.ssh/id_dsa".format(_home)
+            return(ssh_private_key)
+    except:
+         pass
+
+    return(ssh_private_key)
+
 def run_sftp(module):
 
-    ### Setup Connection
+    ### Setup paramiko.Transport Connection
     t = paramiko.Transport((module.params["server"]), (module.params["port"]))
  
-    ### Check user variable
+    ### Get user value
     user = None
     if (module.params["user"]):
         user=(module.params["user"])
     else:
-        ### Check environment value for remote_user var
-        try:
-            user = (os.environ['remote_user'])
-        except:
-            ### Check ansible.cfg for remote_user var
-            try:
-                user = (ConfigMap("defaults")['remote_user'])
-            except:
-                ### Last resort, get current user
-                user = os.getlogin()
+        user = _get_user()
 
-    ### Check ssh_key variable
-    ssh_private_key = None
-    _home = (os.environ['HOME'])
-    
-    ### Use ssh_key option if provided
-    if (module.params["ssh_key"]):
-        ssh_private_key = (module.params["ssh_key"])
-        
-    ### If ssh_key parameter is not provided, try ansible.cfg for private_key_file value
+    ### If password option, login via user + password for paramiko.Transport
+    if (module.params["password"]):
+        try:
+            t.connect(username=user,password=(module.params["password"]))
+        except paramiko.SSHException as sshException:
+            msg=("Unable to establish SSH connection: %s" % sshException)
+            module.fail_json(msg=msg)
+ 
+    ### If no password, try ssh private key for paramiko.Transport
     else:
-        try:
-            ssh_private_key = (ConfigMap("defaults")['private_key_file'])
-            ssh_private_key = os.path.expanduser(ssh_private_key)
-            
-        ### When no ansible.cfg value found, try ~/.ssh for private key
-        except:
-            if (os.path.isfile("{}/.ssh/id_rsa".format(_home))):
-                ssh_private_key = "{}/.ssh/id_rsa".format(_home)
-            elif (os.path.isfile("{}/.ssh/id_dsa".format(_home))):
-                ssh_private_key = "{}/.ssh/id_dsa".format(_home)
 
-    ### If no password parameter, try ssh private key
-    if not (module.params["password"]):
+        ### Create ssh_key variable
+        ssh_private_key = None
+    
+        ### Use ssh_key option if provided
+        if (module.params["ssh_key"]):
+            ssh_private_key = (module.params["ssh_key"])
+        
+        ### If ssh_key option is not provided, search for keys
+        else:
+            ssh_private_key = _KeySearch()
 
-        ### If no ssh_private_key file located, try login with provided user + empty password
-        if not os.path.isfile(ssh_private_key):
-            try:
-                t.connect(username=user, password="")
-            except Exception:
-                msg = "ERROR - ssh private key file not found"
-                module.fail_json(msg=msg)
+        
+        ### Fail if no ssh private key found
+        if not (ssh_private_key):
+            msg = "ERROR - ssh private key file not found"
+            module.fail_json(msg=msg)
                 
-        ### With ssh_private_key
+        ### When ssh_private_key found
         else:
         
             ### Check for key_passwd, if exists - try ssh key with key_passwd using rsa then dsa type
@@ -259,10 +285,10 @@ def run_sftp(module):
                     try:
                         private_key = paramiko.DSSKey.from_private_key_file(ssh_private_key,password=(module.params["key_passwd"]))
                     except paramiko.SSHException as sshException:
-                        msg=("Unable to establish SSH connection: %s" % sshException)
+                        msg=("Unable to establish SSH connection: SSH Key Password")
                         module.fail_json(msg=msg)
 
-            ### If no key_passwd, try ssh key with key_passwd using rsa then dsa type
+            ### If no key_passwd, try ssh private key with rsa then dsa type
             else:
                 try:
                     private_key = paramiko.RSAKey.from_private_key_file(ssh_private_key)
@@ -270,7 +296,7 @@ def run_sftp(module):
                     try:
                         private_key = paramiko.DSSKey.from_private_key_file(ssh_private_key)
                     except paramiko.SSHException as sshException:
-                        msg=("Unable to establish SSH connection: %s" % sshException)
+                        msg=("Unable to establish SSH connection")
                         module.fail_json(msg=msg)
  
             ### login with user + private key
@@ -279,14 +305,6 @@ def run_sftp(module):
             except Exception:
                 msg = "ERROR - ssh private key %s not working" % (ssh_private_key)
                 module.fail_json(msg=msg)
-
-    else:
-        ### login with provided user + password
-        try:
-            t.connect(username=user,password=(module.params["password"]))
-        except paramiko.SSHException as sshException:
-            msg=("Unable to establish SSH connection: %s" % sshException)
-            module.fail_json(msg=msg)
 
     sftp = paramiko.SFTPClient.from_transport(t)
     
@@ -355,6 +373,8 @@ def run_sftp(module):
 
     else:
         module.fail_json(msg="sftp failed")
+    
+    ### Close Connections
     sftp.close()
     t.close()
 
