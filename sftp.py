@@ -173,7 +173,7 @@ def ConfigMap(section):
     return config_dict
 
 def load_config_file():
-    ### Load ansible.cfg fle order: ENV, CWD, HOME, DEFAULT
+    ### Load ansible.cfg file
 
     p = configparser.ConfigParser()
 
