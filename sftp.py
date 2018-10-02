@@ -159,16 +159,13 @@ from ansible.module_utils.basic import *
 from ansible.module_utils.six.moves import configparser
 
 def ConfigMap(section):
-    Config, path = load_config_file()
+    config, path = load_config_file()
     config_dict = {}
-    options = Config.options(section)
+    options = config.options(section)
     for option in options:
         try:
-            config_dict[option] = Config.get(section, option)
-            if config_dict[option] == -1:
-                DebugPrint("skip: %s" % option)
+            config_dict[option] = config.get(section, option)
         except:
-            print("exception on %s!" % option)
             config_dict[option] = None
     return config_dict
 
